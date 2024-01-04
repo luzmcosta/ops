@@ -1,0 +1,8 @@
+{
+  "name": "OpsJS",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node",
+  "features": {
+    "ghcr.io/dhoeric/features/google-cloud-cli:1": {},
+    "ghcr.io/devcontainers-contrib/features/firebase-cli:2": {}
+  }
+}
