@@ -1,0 +1,29 @@
+{
+  "name": "ops",
+  "version": "1.0.0",
+  "description": "OpsJS configures a JavaScript repo for development with Firebase and Font Awesome.",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/luzmcosta/ops.git"
+  },
+  "keywords": [
+    "javascript",
+    "node",
+    "cli",
+    "devops",
+    "gcloud",
+    "firebase",
+    "fontawesome"
+  ],
+  "author": "Luz M. Costa <luzmcosta@gmail.com>",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/luzmcosta/ops/issues"
+  },
+  "homepage": "https://github.com/luzmcosta/ops#readme"
+}
