@@ -275,6 +275,18 @@ const stepFinish = async () => {
   return { error: false }
 }
 
+const runSteps = async (steps, options) => {
+  const step = steps.shift()
+  const result = await step(options)
+  const runNextStep = !result.error && steps.length
+
+  if (result.error) {
+    logger.error(result.messages)
+  }
+
+  return runNextStep ? runSteps(steps, options) : result
+}
+
 export const setup = async (options = {}) => {
   logger.info([`Setting up the environment ...`])
 
@@ -285,18 +297,6 @@ export const setup = async (options = {}) => {
     stepConfigureFontAwesome,
     stepFinish,
   ]
-
-  const runSteps = async (steps, options) => {
-    const step = steps.shift()
-    const result = await step(options)
-    const runNextStep = !result.error && steps.length
-
-    if (result.error) {
-      logger.error(result.messages)
-    }
-
-    return runNextStep ? runSteps(steps, options) : result
-  }
 
   return runSteps(allSteps, options)
 }
