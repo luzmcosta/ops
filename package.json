@@ -4,6 +4,9 @@
   "description": "OpsJS configures a JavaScript repo for development with Firebase and Font Awesome.",
   "type": "module",
   "main": "index.js",
+  "bin": {
+    "ops": "src/ops.js"
+  },
   "scripts": {
     "ops": "npm run start && ops setup",
     "start": "npm i -g .",
