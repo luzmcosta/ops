@@ -5,7 +5,10 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "ops": "npm run start && ops setup",
+    "start": "npm i -g .",
+    "stop": "npm un -g iadops",
+    "test": "node --test"
   },
   "repository": {
     "type": "git",
@@ -25,5 +28,12 @@
   "bugs": {
     "url": "https://github.com/luzmcosta/ops/issues"
   },
-  "homepage": "https://github.com/luzmcosta/ops#readme"
+  "homepage": "https://github.com/luzmcosta/ops#readme",
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^11.1.0",
+    "dotenv": "^16.3.1",
+    "inquirer": "^9.2.12",
+    "shelljs": "^0.8.5"
+  }
 }
