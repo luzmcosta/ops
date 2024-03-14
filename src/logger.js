@@ -20,7 +20,7 @@ import chalk from 'chalk'
  * @desc The console object.
  * @type {Console | console}
  */
-const Logger = console
+export const Logger = console
 
 /**
  * @const colors
@@ -84,10 +84,11 @@ export const styleOutput = (styleName, messages) => {
  * Log styled messages to the console.
  * @param {String} logLevel A log level from the styleMap.
  * @param {Array | String} messages A string or array of strings to log.
+ * @param {Console | console} logger The console object.
  * @return {String} The styled output.
  */
-export const print = (logLevel, messages) => {
-  const printer = Logger[logLevel] || Logger.log
+export const print = (logLevel, messages, logger = Logger) => {
+  const printer = logger[logLevel] || logger.log
   const output = styleOutput(logLevel, messages)
 
   printer(output)
@@ -143,7 +144,7 @@ export const warn = (messages) => {
 /**
  * @const logger
  * @desc Log styled messages to the console.
- * @type {{log: function, error: function, info: function, success: function, warn: function}}
+ * @type {{log: function, error: function, info: function, print: function, success: function, warn: function}}
  *
  * @example {@lang javascript}
  * import { logger } from './logger'
@@ -153,6 +154,7 @@ export const logger = {
   log,
   error,
   info,
+  print,
   success,
   warn,
 }
