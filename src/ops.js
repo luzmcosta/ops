@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 
 /**
- *@file OpsJS
+ * @file OpsJS
  * @desc Manage complex development operations.
+ * @module ops
+ * @doc ops
  */
 
 /**
@@ -13,28 +15,39 @@
  */
 import dotenv from 'dotenv'
 
-import { execSync, spawn } from 'node:child_process'
-import fs from 'node:fs/promises'
+// Node dependencies
 import path, { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+// Third-party dependencies
 import { Command } from 'commander'
 import inquirer from 'inquirer'
-import shell from 'shelljs'
+import shelljs from 'shelljs'
 
+// Local utilities
+import { PROCESS, TESTING } from './env.js'
+import { exec } from './exec.js'
 import { logger } from './logger.js'
+
+// Local service configuration modules
+import {
+  configureFirebase,
+  getProjectName,
+} from './firebase.js'
+
+import { configureGoogleProject } from './gcloud.js'
 
 /**
  * @section Import environment variables
  * @desc Import environment variables defined in the .env file.
  */
 
-const PROCESS = typeof process === 'undefined' ? import.meta : process
-
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-const rootDir = path.join(__dirname, '../../')
+// @note Configure RELATIVE_ROOT_PATH to match the project's directory structure.
+const RELATIVE_ROOT_PATH = '../'
+const rootDir = path.join(__dirname, RELATIVE_ROOT_PATH)
 
 dotenv.config({ path: path.resolve(rootDir, `.env`) })
 
@@ -45,10 +58,6 @@ dotenv.config({ path: path.resolve(rootDir, `.env`) })
 // Create an instance of the command line interface.
 const commander = new Command()
 
-// Define the valid environments and modes using the Firebase configuration file.
-const firebasercFile = await fs.readFile('.firebaserc', 'utf8')
-const firebaserc = JSON.parse(firebasercFile)
-
 // Get values for the command line options.
 const FONT_AWESOME_ACCOUNT_URL = 'fontawesome.com/account'
 const FONT_AWESOME_NPM_REGISTRY = 'npm.fontawesome.com/'
@@ -57,153 +66,158 @@ const {
   FONT_AWESOME_TOKEN,
   FONT_AWESOME_TOKEN_LOCATION = FONT_AWESOME_ACCOUNT_URL,
   OPS_NODE_ENV = 'development',
-  OPS_PROJECT_KEY = Object.keys(firebaserc.projects)[0],
+  OPS_PROJECT_KEY = 'default',
 } = PROCESS.env
-
-// Define utility functions.
-const controller = new AbortController()
-const { signal } = controller
 
 /**
  * @section Define API
  */
 
 /**
- * @function exec
- * @desc Execute a command. This function is a wrapper for the
- * `child_process.spawn` function. It returns a promise that
- * resolves with the result of the operation.
- * @param {string} command The command to execute.
- * @param {Object} options The options for the spawn command.
- * @return {Promise<Object<{ code: number, stderr: string, stdout: string }>>} The result of the operation.
- */
-export const exec = (command, options = {}) => {
-  return new Promise((resolve) => {
-    const cmd = spawn(command, [], { ...options, shell: true, signal, stdio: 'overlapped' })
-
-    let stderr = ''
-    let stdout = ''
-
-    logger.log([`Running \`${command}\` ...`])
-
-    cmd.stdout.on('data', (data) => {
-      console.log(data.toString())
-
-      stdout += data
-    })
-
-    cmd.stderr.on('data', (data) => {
-      logger.error([`STDERR: ${data}`])
-
-      stderr += data
-
-      resolve({ code: 1, stderr, stdout })
-    })
-
-    cmd.on('exit', (code) => {
-      resolve({ code, stdout })
-    })
-  })
-}
-
-/**
  * @function setNodeEnv
- * @param env
+ * @desc Set the NODE_ENV environment variable.
+ * @param {string} env The desired NODE_ENV value.
  * @return {{error: boolean}}
+ *
+ * @requires shelljs.env
  */
 export const configureNodeEnv = (env) => {
-  shell.env['NODE_ENV'] = env
+  shelljs.env['NODE_ENV'] = env
 
-  const error = shell.env['NODE_ENV'] !== env
+  const error = shelljs.env['NODE_ENV'] !== env
 
   return { error }
 }
 
 /**
- * @function configureFirebaseProject
- * @param {Object} options
- * @param {string} options.projectKey
- * @return {Promise<{error: boolean}>}
+ * @function obtainFontAwesomeToken
+ * @desc Obtain the Font Awesome token from the user.
+ * @param {Function} [prompter=inquirer.prompt] The prompter function.
+ * @return {Promise<{error: boolean, message: string, token: string}>} The result of the token retrieval.
  */
-export const configureFirebaseProject = async ({ projectKey }) => {
-  const { code } = await exec(`firebase use ${projectKey}`)
-
-  return { error: code !== 0 }
-}
-
-/**
- * @function configureGoogleProject
- * @param {Object} options
- * @param {string} options.projectKey
- * @return {Promise<{error: boolean}>}
- */
-export const configureGoogleProject = async ({ projectKey }) => {
-  const projectName = firebaserc.projects[projectKey]
-
-  if (!projectName) {
-    return { error: true }
-  }
-
-  /**
-   * Use the gcloud command's --no-user-output-enabled flag to ensure only actual errors are directed to stderr.
-   * This flag is available on all gcloud commands. Without it, gcloud commands may falsely direct their success
-   * message to stderr. For more information, see
-   * {@link https://cloud.google.com/sdk/gcloud/reference#--user-output-enabled} and
-   * {@link https://unix.stackexchange.com/questions/604248/how-to-stop-stderr-output-from-gcloud-command-in-cron-script-without-stopping-al}
-   */
-  const { code } = await exec(`gcloud config set project ${projectName} --no-user-output-enabled`)
-
-  return { error: code !== 0 }
-}
-
-export const configureFirebase = async (options) => {
-  logger.info([`Enabling Firebase's experimental webframeworks feature ...`])
-
-  // Enable firebase webframeworks. Command outputs `{ webframeworks }`.
-  await exec(`firebase experiments:enable webframeworks`)
-
-  logger.info([`Signing into Firebase ...`])
-
-  // Sign in to Firebase using interactive shell script.
-  execSync(`firebase login`, { stdio: 'inherit' })
-
-  await configureFirebaseProject(options)
-
-  logger.success([`Firebase is ready.`])
-
-  return { error: false }
-}
-
-export const configureFontAwesome = async () => {
-  logger.info([`Setting up Font Awesome ... \n`])
+export const obtainFontAwesomeToken = async (prompter = inquirer.prompt) => {
   logger.info([`Obtain the Font Awesome token from ${FONT_AWESOME_TOKEN_LOCATION}`])
 
-  const promptForFontAwesomeToken = await inquirer.prompt([
+  const response = await prompter([
     {
       type: 'input',
       name: 'token',
       message: 'Enter the Font Awesome token.',
       default: FONT_AWESOME_TOKEN || '',
     },
-  ])
+  ]).catch((error) => {
+    return { error: true, message: error.message }
+  })
 
-  logger.info([`Configuring access to the Font Awesome registry ...`])
+  const { error: promptError, message: promptMessage, token } = response || {}
+  const isValidToken = () => token && token.length > 0
 
-  // Set npm config for Font Awesome. Command outputs `{ configset }`.
-  await exec(`npm config set "@fortawesome:registry" ${FONT_AWESOME_NPM_REGISTRY}`)
+  const error = promptError || !isValidToken()
+  const message = error
+    ? promptMessage || `The Font Awesome token is invalid.`
+    : `The Font Awesome token has been obtained.`
 
-  // Set Font Awesome Token. Command outputs `{ token }`.
-  await exec(`npm config set "//${FONT_AWESOME_NPM_REGISTRY}:_authToken" ${promptForFontAwesomeToken.token}`)
-
-  logger.success([`Font Awesome is ready.`])
-
-  return { error: false }
+  return { error, message, token }
 }
 
-const stepConfigureNodeEnv = async (options) => {
+/**
+ * @function setFontAwesomeRegistry
+ * @desc Set the Font Awesome registry in the npm configuration.
+ * @param {Function} [executable=exec] The command line executable.
+ */
+export const setFontAwesomeRegistry = async (executable = exec) => {
+  const result = await executable(`npm config set "@fortawesome:registry" ${FONT_AWESOME_NPM_REGISTRY}`)
+
+  const { code } = result
+  const error = code !== 0
+  const message = error
+    ? `Failed to set the Font Awesome registry.`
+    : `The Font Awesome registry has been set.`
+
+  return { error, message }
+}
+
+/**
+ * @function setFontAwesomeToken
+ * @desc Set the Font Awesome token in the npm configuration.
+ * @param {{token: string}} options The options for the token configuration.
+ * @param {Function} [executable=exec] The command line executable.
+ * @return {Promise<{error: boolean, message: string}>} The result of the token configuration.
+ */
+export const setFontAwesomeToken = async (options, executable = exec) => {
+  logger.info([`Configuring access to the Font Awesome registry ...`])
+
+  const result = await executable(`npm config set "//${FONT_AWESOME_NPM_REGISTRY}:_authToken" ${options?.token}`)
+
+  const { code } = result
+  const error = code !== 0
+  const message = error
+    ? `Failed to set the Font Awesome token.`
+    : `The Font Awesome token has been set.`
+
+  return { error, message }
+}
+
+/**
+ * @function makeFontAwesomeConfigurationSteps
+ * @desc Configure the steps to configure Font Awesome.
+ * @param {Function} [prompter=inquirer.prompt] The prompter function.
+ * @param {Function} [executable=exec] The command line executable.
+ * @return {Function[]} The steps to configure Font Awesome.
+ *
+ * @requires obtainFontAwesomeToken
+ * @requires setFontAwesomeRegistry
+ * @requires setFontAwesomeToken
+ */
+export const makeFontAwesomeConfigurationSteps = (
+  prompter = inquirer.prompt,
+  executable = exec) => {
+  const $obtainFontAwesomeToken = () => obtainFontAwesomeToken(prompter)
+  const $setFontAwesomeRegistry = () => setFontAwesomeRegistry(executable)
+  const $setFontAwesomeToken = (state) => setFontAwesomeToken(state, executable)
+
+  const steps = [
+    $obtainFontAwesomeToken,
+    $setFontAwesomeRegistry,
+    $setFontAwesomeToken,
+  ]
+
+  return steps
+}
+
+/**
+ * @function configureFontAwesome
+ * @desc Configure Font Awesome.
+ * @param {Function[]} [steps=makeFontAwesomeConfigurationSteps] The steps to configure Font Awesome.
+ * @return {Promise<{error: boolean, message: string, token: string}>} The result of the Font Awesome configuration.
+ */
+export const configureFontAwesome = async (
+  steps = makeFontAwesomeConfigurationSteps()) => {
+  logger.info([`Setting up Font Awesome ... \n`])
+
+  const successResponse = { error: false, message: 'Font Awesome is ready.' }
+
+  return steps.reduce(async (currentState, step) => {
+    const state = await currentState
+    const latestState = state.error ? state : await step(state)
+
+    // Determine whether the step was successful.
+    const { error, token } = latestState
+    const haveToken = !error && token && token.length > 0
+
+    if (haveToken) {
+      // Set the token on the state for following steps to use.
+      state.token = token
+    }
+
+    return error ? latestState : state
+  }, Promise.resolve(successResponse))
+}
+
+export const stepConfigureNodeEnv = async (options, executable = configureNodeEnv) => {
   logger.info([`Configuring the NODE_ENV environment variable to ${options.env} ...`])
 
-  const result = configureNodeEnv(options.env)
+  const result = executable(options.env)
 
   if (result.error) {
     result.messages = [
@@ -216,13 +230,31 @@ const stepConfigureNodeEnv = async (options) => {
     logger.success([`The environment is ready.`])
   }
 
-  return result
+  return Promise.resolve(result)
 }
 
-const stepConfigureGoogle = async (options) => {
+/**
+ * @function stepConfigureGoogle
+ * @desc Configure Google Cloud CLI with the project name.
+ * @param {Object} options The options for the Google Cloud configuration.
+ * @param {string} options.directory The project's root directory.
+ * @param {string} options.projectKey The project key.
+ * @param {Function} [parser=configureGoogleProject] The parser function.
+ * @param {Function} [reader=getProjectName] The reader function.
+ * @return {Promise<{error: boolean, message: string}>} The result of the Google Cloud configuration.
+ */
+export const stepConfigureGoogle = async (
+  options,
+  parser = configureGoogleProject,
+  reader = getProjectName) => {
   logger.info([`Configuring Google Cloud ...`])
 
-  const result = await configureGoogleProject(options)
+  const projectNameResult = await reader(options)
+  const { error, projectName } = projectNameResult || {}
+
+  logger.log([`Setting the Google Cloud project to "${projectName}" ...`])
+
+  const result = error ? projectNameResult : await parser(projectName)
 
   if (result.error) {
     result.messages = [
@@ -241,8 +273,8 @@ const stepConfigureGoogle = async (options) => {
   return result
 }
 
-const stepConfigureFirebaseProject = async (options) => {
-  const result = await configureFirebase(options)
+export const stepConfigureFirebaseProject = async (options, executable = configureFirebase) => {
+  const result = await executable(options)
 
   if (result.error) {
     result.messages = [
@@ -254,13 +286,15 @@ const stepConfigureFirebaseProject = async (options) => {
       `  3. Ensure your gcloud user has access to the project referenced in the .firebaserc file.\n`,
       `     Run "firebase login:list" to review your auth state.\n`,
     ]
+  } else {
+    logger.success([`Firebase is ready.`])
   }
 
   return result
 }
 
-const stepConfigureFontAwesome = async () => {
-  const result = await configureFontAwesome()
+export const stepConfigureFontAwesome = async (executable = configureFontAwesome) => {
+  const result = await executable()
 
   if (result.error) {
     result.messages = [`Failed to configure Font Awesome.`]
@@ -269,22 +303,40 @@ const stepConfigureFontAwesome = async () => {
   return result
 }
 
-const stepFinish = async () => {
+export const stepFinish = async () => {
   logger.success([`\nThe setup is complete. Happy coding!\n`])
 
   return { error: false }
 }
 
-const runSteps = async (steps, options) => {
+export const runSteps = async (steps, options) => {
   const step = steps.shift()
   const result = await step(options)
   const runNextStep = !result.error && steps.length
 
   if (result.error) {
-    logger.error(result.messages)
+    if (result.message) {
+      logger.error([result.message])
+    }
+
+    if (result.messages) {
+      logger.log(result.messages)
+    }
   }
 
   return runNextStep ? runSteps(steps, options) : result
+}
+
+export const setupFirebase = async (options = {}) => {
+  logger.info([`Configuring Firebase ...`])
+
+  const allSteps = [
+    stepConfigureGoogle,
+    stepConfigureFirebaseProject,
+    stepFinish,
+  ]
+
+  return runSteps(allSteps, options)
 }
 
 export const setup = async (options = {}) => {
@@ -294,7 +346,7 @@ export const setup = async (options = {}) => {
     stepConfigureNodeEnv,
     stepConfigureGoogle,
     stepConfigureFirebaseProject,
-    stepConfigureFontAwesome,
+    stepConfigureFontAwesome.bind(null, configureFontAwesome),
     stepFinish,
   ]
 
@@ -309,24 +361,39 @@ commander
   .name('ops')
   .version('1.0.0', '-v, --version')
   .description('Manage the application.')
-  .usage('[command] [options]')
-  .parse(PROCESS.argv)
+  .action(() => {
+    if (!TESTING) {
+      commander.help()
+    }
+  })
 
 commander
   .command('setup')
   .description('Setup the development environment.')
+  .option('-d, --directory <directory>', `The project's root directory.`, rootDir)
   .option('-e, --env <env>', `The desired NODE_ENV value.`, OPS_NODE_ENV)
   .option('-p, --projectKey <projectKey>', `The property name in the .firebaserc file.`, OPS_PROJECT_KEY)
-  .parse(PROCESS.argv)
-  .action(async (options) => {
+  .option('-v, --verbose', `Show verbose information.`)
+  .option('-x, --debug', `Show debug information.`)
+  .action((options) => {
     return setup(options)
+  })
+
+commander
+  .command('firebase')
+  .description('Configure Firebase for the project.')
+  .option('-d, --directory <directory>', `The project's root directory.`, rootDir)
+  .option('-p, --projectKey <projectKey>', `The property name in the .firebaserc file.`, OPS_PROJECT_KEY)
+  .option('-v, --verbose', `Show verbose information.`)
+  .option('-x, --debug', `Show debug information.`)
+  .action((options) => {
+    return setupFirebase(options)
   })
 
 commander
   .command('help')
   .description('Show the help text.')
-  .parse(PROCESS.argv)
-  .action(async () => {
+  .action(() => {
     return commander.help()
   })
 
@@ -334,6 +401,6 @@ commander
 commander.parse(PROCESS.argv)
 
 // If no command is specified, show the help text.
-if (!commander.args.length) {
+if (!commander.args.length && !TESTING) {
   commander.help()
 }
